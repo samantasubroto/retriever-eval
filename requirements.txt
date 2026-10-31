@@ -4,3 +4,4 @@ python-dotenv
 pypdf
 chromadb
 langchain-text-splitters
+rank-bm25

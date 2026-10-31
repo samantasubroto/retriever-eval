@@ -4,6 +4,7 @@ from statistics import mean
 
 from evals import metrics
 from retriever import config
+from retriever.hybrid import hybrid_search
 from retriever.search import search
 
 
@@ -12,25 +13,41 @@ def load_golden(path: str = config.GOLDEN_PATH) -> list[dict]:
         return json.load(f)
 
 
+def score_sections(sections: list[str], relevant: list[str], ks: tuple[int, ...], prefix: str = "") -> dict:
+    """Section-ID recall, hit rate and precision at each k."""
+    row = {}
+    for k in ks:
+        row[f"{prefix}recall@{k}"] = metrics.recall_at_k(sections, relevant, k)
+        row[f"{prefix}hit@{k}"] = metrics.hit_at_k(sections, relevant, k)
+        row[f"{prefix}precision@{k}"] = metrics.precision_at_k(sections, relevant, k)
+    return row
+
+
 def evaluate_item(item: dict, use_judge: bool) -> dict:
     """Retrieve for one golden question and compute all metrics."""
     relevant = item["source_section_ids"]
-    results = search(item["question"], k=max(config.K_VALUES))
-    sections = [r["metadata"]["section_id"] for r in results]
+    section_of = lambda chunks: [c["metadata"]["section_id"] for c in chunks]
 
-    row = {"id": item["id"], "difficulty": item["difficulty"], "retrieved": metrics.dedupe(sections)}
-    for k in config.K_VALUES:
-        row[f"recall@{k}"] = metrics.recall_at_k(sections, relevant, k)
-        row[f"hit@{k}"] = metrics.hit_at_k(sections, relevant, k)
-        row[f"precision@{k}"] = metrics.precision_at_k(sections, relevant, k)
+    if config.SEARCH_STRATEGY == "hybrid_rerank":
+        # two stages: the fused pool (rrf_*, scored at the final k and the pool k) and the reranked final list
+        pool, results = hybrid_search(item["question"])
+        row = {"id": item["id"], "difficulty": item["difficulty"], "retrieved": metrics.dedupe(section_of(results))}
+        row.update(score_sections(section_of(pool), relevant, (config.FINAL_K, config.POOL_K), prefix="rrf_"))
+        sections, ks, judge_k = section_of(results), (config.FINAL_K,), config.FINAL_K
+    else:
+        results = search(item["question"], k=max(config.K_VALUES))
+        sections, ks, judge_k = section_of(results), config.K_VALUES, config.JUDGE_K
+        row = {"id": item["id"], "difficulty": item["difficulty"], "retrieved": metrics.dedupe(sections)}
+
+    row.update(score_sections(sections, relevant, ks))
     row["mrr"] = metrics.reciprocal_rank(sections, relevant)
 
     if use_judge:
         from evals import judge
 
-        texts = [r["text"] for r in results[: config.JUDGE_K]]
-        row[f"ctx_recall@{config.JUDGE_K}"] = judge.contextual_recall(item["question"], item["ground_truth"], texts)
-        row[f"ctx_precision@{config.JUDGE_K}"] = judge.contextual_precision(item["question"], item["ground_truth"], texts)
+        texts = [r["text"] for r in results[:judge_k]]
+        row[f"ctx_recall@{judge_k}"] = judge.contextual_recall(item["question"], item["ground_truth"], texts)
+        row[f"ctx_precision@{judge_k}"] = judge.contextual_precision(item["question"], item["ground_truth"], texts)
     return row
 
 
