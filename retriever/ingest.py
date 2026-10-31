@@ -2,6 +2,7 @@ from pathlib import Path
 
 import chromadb
 from openai import OpenAI
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from pypdf import PdfReader
 
 from retriever import config
@@ -20,14 +21,31 @@ def load_pdf(path: Path) -> list[dict]:
     return pages
 
 
+def chunk_text_fixed(text: str, chunk_size: int, overlap: int) -> list[str]:
+    """Split text into fixed-size character windows with overlap."""
+    step = chunk_size - overlap
+    return [text[i : i + chunk_size] for i in range(0, len(text), step) if text[i : i + chunk_size].strip()]
+
+
+def chunk_text_recursive(text: str, chunk_size: int, overlap: int) -> list[str]:
+    """Split on paragraphs, then lines, sentences and words, only cutting mid-word as a last resort."""
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size,
+        chunk_overlap=overlap,
+        separators=["\n\n", "\n", ". ", " ", ""],
+    )
+    return [c for c in splitter.split_text(text) if c.strip()]
+
+
 def chunk_text(
     text: str,
     chunk_size: int = config.CHUNK_SIZE,
     overlap: int = config.CHUNK_OVERLAP,
 ) -> list[str]:
-    """Split text into fixed-size character windows with overlap."""
-    step = chunk_size - overlap
-    return [text[i : i + chunk_size] for i in range(0, len(text), step) if text[i : i + chunk_size].strip()]
+    """Chunk text with the strategy chosen in config.CHUNKING."""
+    if config.CHUNKING == "recursive":
+        return chunk_text_recursive(text, chunk_size, overlap)
+    return chunk_text_fixed(text, chunk_size, overlap)
 
 
 def chunk_pages(pages: list[dict], source: str) -> list[dict]:
