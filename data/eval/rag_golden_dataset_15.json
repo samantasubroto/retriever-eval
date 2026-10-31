@@ -1,0 +1,234 @@
+[
+  {
+    "id": "GOLD-001",
+    "question": "How would you build a PDF question-answering assistant from ingestion to a cited answer?",
+    "ground_truth": "Load and clean PDF content into documents with source metadata, then split it into appropriately sized chunks with limited overlap. Create embeddings and index the chunks with stable IDs in a vector store. At query time, retrieve relevant chunks, include them with the question and clear instructions in an LLM prompt, and generate an answer with source citations. Track extraction, retrieval, grounding, latency, and failures separately; LangChain can connect these stages but does not replace their design.",
+    "source_section_ids": [
+      "RAG-001",
+      "RAG-002",
+      "RAG-013",
+      "RAG-014",
+      "RAG-017",
+      "RAG-018",
+      "RAG-028",
+      "RAG-029",
+      "RAG-030"
+    ],
+    "type": "multi_section_synthesis",
+    "difficulty": "hard"
+  },
+  {
+    "id": "GOLD-002",
+    "question": "Why might a RAG system return the wrong answer even when the language model is capable?",
+    "ground_truth": "The source may have been extracted poorly, split so that a key exception was separated, indexed with stale data, or retrieved with irrelevant matches. Too few results can omit evidence; too many add noise. Even with good retrieval, a model can misinterpret context or invent unsupported details. Diagnose ingestion and retriever recall/precision separately from generator faithfulness and correctness, using traces and golden test cases.",
+    "source_section_ids": [
+      "RAG-013",
+      "RAG-014",
+      "RAG-020",
+      "RAG-022",
+      "RAG-021",
+      "RAG-034",
+      "RAG-035",
+      "RAG-037",
+      "RAG-038",
+      "RAG-040"
+    ],
+    "type": "multi_section_synthesis",
+    "difficulty": "hard"
+  },
+  {
+    "id": "GOLD-003",
+    "question": "A student asks about a product code or exact identifier but semantic search misses it. What should change?",
+    "ground_truth": "Embeddings capture related meaning, but similarity depends on the embedding model and may not preserve rare codes reliably. Add lexical or hybrid search for exact identifiers, keep identifiers in metadata where appropriate, and test different query forms. Tune top-k and ranking on representative identifier questions; verify whether relevant evidence is actually retrieved rather than assuming a larger embedding model will solve the problem.",
+    "source_section_ids": [
+      "RAG-003",
+      "RAG-017",
+      "RAG-019",
+      "RAG-022",
+      "RAG-023",
+      "RAG-037",
+      "RAG-040"
+    ],
+    "type": "multi_section_synthesis",
+    "difficulty": "hard"
+  },
+  {
+    "id": "GOLD-004",
+    "question": "How do chunk size, chunk overlap, and parent-document retrieval affect answer quality?",
+    "ground_truth": "Small chunks can improve precision yet lose surrounding qualifications; large chunks preserve context but dilute relevance. Overlap protects content crossing boundaries, but excessive overlap creates duplicates and costs. Recursive splitting attempts to preserve natural structure. Parent-document retrieval searches smaller child chunks while returning larger parent passages, combining precise matching with richer context. Compare configurations with retrieval and answer evaluations rather than assuming a universal best size.",
+    "source_section_ids": [
+      "RAG-014",
+      "RAG-015",
+      "RAG-016",
+      "RAG-027",
+      "RAG-037",
+      "RAG-038"
+    ],
+    "type": "multi_section_synthesis",
+    "difficulty": "medium"
+  },
+  {
+    "id": "GOLD-005",
+    "question": "How should I decide between top-k retrieval, MMR, multi-query retrieval, and contextual compression?",
+    "ground_truth": "Start with a basic retriever and tune top-k for evidence coverage versus noise and token cost. Use MMR when top results are repetitive and multiple aspects need coverage. Use multi-query retrieval when users phrase the same need ambiguously; it increases search work and cost. Use contextual compression when retrieved passages contain a lot of irrelevant text, ensuring important exceptions remain. Evaluate each change against the same golden cases.",
+    "source_section_ids": [
+      "RAG-021",
+      "RAG-022",
+      "RAG-024",
+      "RAG-025",
+      "RAG-026",
+      "RAG-035",
+      "RAG-037"
+    ],
+    "type": "multi_section_synthesis",
+    "difficulty": "hard"
+  },
+  {
+    "id": "GOLD-006",
+    "question": "What is the difference between embeddings, a vector store, and a retriever?",
+    "ground_truth": "An embedding model converts text or queries into dense vectors whose proximity can capture semantic relatedness. A vector store persists embeddings and supports nearest-neighbor search, using a chosen similarity or distance measure and index operations. A retriever is the query-facing component that applies a search strategy to return relevant documents; it may use a vector store or a hybrid strategy. They serve different roles in the same RAG pipeline.",
+    "source_section_ids": [
+      "RAG-003",
+      "RAG-018",
+      "RAG-019",
+      "RAG-020",
+      "RAG-021",
+      "RAG-023"
+    ],
+    "type": "multi_section_synthesis",
+    "difficulty": "medium"
+  },
+  {
+    "id": "GOLD-007",
+    "question": "Why are metadata, stable IDs, and citations important for trustworthy RAG answers?",
+    "ground_truth": "Metadata records source, section, date, language, and access attributes for filtering and auditing. Stable identifiers help update or delete indexed content when sources change. During answer generation, source references allow readers to check the evidence. Evaluation should confirm that a cited passage supports the precise claim, not merely that it discusses a similar topic. Poor metadata or stale indexing undermines traceability.",
+    "source_section_ids": [
+      "RAG-013",
+      "RAG-017",
+      "RAG-020",
+      "RAG-029",
+      "RAG-030",
+      "RAG-038"
+    ],
+    "type": "multi_section_synthesis",
+    "difficulty": "medium"
+  },
+  {
+    "id": "GOLD-008",
+    "question": "How can LangChain prompts, chains, and Runnables work together in a RAG workflow?",
+    "ground_truth": "LangChain coordinates components instead of supplying the model knowledge itself. Prompt templates combine instructions, user questions, and retrieved context; role-based messages and history must be managed explicitly. A chain connects steps such as prompt, model, and parser. Runnables provide a common interface for invocation, batching, streaming, and asynchronous work; sequence, parallel, and branch patterns express dependencies or routing. Validate inputs and outputs between steps.",
+    "source_section_ids": [
+      "RAG-001",
+      "RAG-004",
+      "RAG-005",
+      "RAG-008",
+      "RAG-009",
+      "RAG-010",
+      "RAG-011",
+      "RAG-012"
+    ],
+    "type": "multi_section_synthesis",
+    "difficulty": "hard"
+  },
+  {
+    "id": "GOLD-009",
+    "question": "How are structured output, output parsing, and tool calling different?",
+    "ground_truth": "Structured output asks the model to produce fields matching a schema; the result still needs validation. An output parser converts the model message into a string or structured object and may fail on malformed content. Tool calling instead lets a model request an executable action by supplying tool arguments; the application validates and executes that action. These mechanisms solve response formatting, response processing, and external action respectively.",
+    "source_section_ids": [
+      "RAG-006",
+      "RAG-007",
+      "RAG-031",
+      "RAG-032"
+    ],
+    "type": "multi_section_synthesis",
+    "difficulty": "medium"
+  },
+  {
+    "id": "GOLD-010",
+    "question": "When is an AI agent more appropriate than a fixed chain, and what safeguards are required?",
+    "ground_truth": "A fixed chain is appropriate when the order of steps is known. An agent is useful when the next tool depends on previous results, such as retrieving policy information and then checking a shipment status. Agents can iterate through actions and observations, but the application must define tool schemas, validate tool requests, restrict authorization, and enforce iteration or other guardrail limits. Dynamic behavior brings flexibility and extra failure modes.",
+    "source_section_ids": [
+      "RAG-008",
+      "RAG-012",
+      "RAG-031",
+      "RAG-032",
+      "RAG-033"
+    ],
+    "type": "multi_section_synthesis",
+    "difficulty": "medium"
+  },
+  {
+    "id": "GOLD-011",
+    "question": "What should a good golden dataset for evaluating a RAG assistant contain?",
+    "ground_truth": "It should include curated, representative questions with trusted expected outcomes and optional difficulty labels. Cover simple, paraphrased, ambiguous, conflicting, adversarial, and no-answer cases. Where questions require several parts of the corpus, record all supporting section IDs. Evaluate not only exact wording but whether retrieved evidence supports the required facts, and retain failed or near-miss cases for regression tests.",
+    "source_section_ids": [
+      "RAG-035",
+      "RAG-037",
+      "RAG-038",
+      "RAG-040",
+      "RAG-001"
+    ],
+    "type": "multi_section_synthesis",
+    "difficulty": "medium"
+  },
+  {
+    "id": "GOLD-012",
+    "question": "How do contextual recall, precision, faithfulness, and correctness differ in RAG evaluation?",
+    "ground_truth": "Recall asks whether retrieval captured the information needed for an answer, including critical exceptions. Precision asks how much returned content is relevant and can consider its ranking. Faithfulness checks whether the generated answer is supported by retrieved context. Correctness checks agreement with trusted facts or expected outcomes; a response can be faithful to a mistaken source yet incorrect, or factually correct without support in the retrieved evidence.",
+    "source_section_ids": [
+      "RAG-021",
+      "RAG-022",
+      "RAG-034",
+      "RAG-037",
+      "RAG-038"
+    ],
+    "type": "multi_section_synthesis",
+    "difficulty": "medium"
+  },
+  {
+    "id": "GOLD-013",
+    "question": "How would you evaluate changes to an embedding model or chunking strategy without harming existing users?",
+    "ground_truth": "Create a repeatable offline evaluation on diverse golden cases, including rare identifier queries. Compare retrieval recall, precision, answer faithfulness, correctness, latency, and cost against the current configuration. Preserve component versions, test conditions, and traces. Use release gates for regressions, then sample and monitor real production requests online. Feed newly observed failures back into the dataset; an average gain can hide worse performance for a subgroup.",
+    "source_section_ids": [
+      "RAG-014",
+      "RAG-023",
+      "RAG-034",
+      "RAG-035",
+      "RAG-036",
+      "RAG-037",
+      "RAG-038",
+      "RAG-039",
+      "RAG-040"
+    ],
+    "type": "multi_section_synthesis",
+    "difficulty": "hard"
+  },
+  {
+    "id": "GOLD-014",
+    "question": "What is the difference between offline and online evaluation, and why do we need both?",
+    "ground_truth": "Offline evaluation runs repeatable, curated test cases before release, making comparisons and regression detection possible. Online evaluation observes real user interactions, including unexpected terminology or inputs that were absent from tests. Together they support an improvement loop: test, release, monitor, analyze failures, update golden cases, and retest. Quality, safety, latency, and cost should match the application goals.",
+    "source_section_ids": [
+      "RAG-002",
+      "RAG-034",
+      "RAG-035",
+      "RAG-036",
+      "RAG-040"
+    ],
+    "type": "multi_section_synthesis",
+    "difficulty": "medium"
+  },
+  {
+    "id": "GOLD-015",
+    "question": "How should an engineering team choose an LLM for a RAG or text-to-SQL application?",
+    "ground_truth": "Do not choose solely by general leaderboard position. Define representative questions, expected outcomes, constraints, and a safe test environment. Run the same task-specific cases for candidate models and compare correctness, latency, cost, and operational limits. For text-to-SQL, one example in the corpus is running candidate queries against a safe read-only database. Keep evaluation reproducible and monitor regressions after deployment.",
+    "source_section_ids": [
+      "RAG-034",
+      "RAG-035",
+      "RAG-036",
+      "RAG-039",
+      "RAG-040"
+    ],
+    "type": "multi_section_synthesis",
+    "difficulty": "medium"
+  }
+]
