@@ -1,3 +1,6 @@
+import re
+
+
 def dedupe(section_ids: list[str]) -> list[str]:
     """Unique section ids, keeping first-seen (rank) order."""
     return list(dict.fromkeys(section_ids))
@@ -26,3 +29,13 @@ def reciprocal_rank(retrieved: list[str], relevant: list[str]) -> float:
         if s in set(relevant):
             return 1 / rank
     return 0.0
+
+
+def _norm(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip().lower()
+
+
+def fact_recall_at_k(chunk_texts: list[str], facts: list[str], k: int) -> float:
+    """Fraction of evidence facts that appear verbatim in at least one of the top-k chunks."""
+    top = [_norm(t) for t in chunk_texts[:k]]
+    return sum(any(_norm(f) in t for t in top) for f in facts) / len(facts)

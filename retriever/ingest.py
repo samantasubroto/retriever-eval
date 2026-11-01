@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import chromadb
@@ -48,21 +49,50 @@ def chunk_text(
     return chunk_text_fixed(text, chunk_size, overlap)
 
 
-def chunk_pages(pages: list[dict], source: str) -> list[dict]:
-    """Chunk each page, keeping source/page metadata and a stable id."""
+def load_articles(path: Path) -> list[dict]:
+    """Load MultiHop-RAG articles; the url is the document id."""
+    docs = []
+    for a in json.loads(Path(path).read_text()):
+        header = f"{a['title']} | {a['source']} | {a['published_at'][:10]}"
+        docs.append(
+            {
+                "doc_id": a["url"],
+                "text": a["body"],
+                "header": header if config.ARTICLE_HEADER else "",
+                "metadata": {"title": a["title"], "source": a["source"], "published_at": a["published_at"]},
+            }
+        )
+    return docs
+
+
+def load_documents() -> list[dict]:
+    """Return one {"doc_id", "text", "metadata"} dict per document of the configured DATASET."""
+    if config.DATASET == "multihop":
+        return load_articles(Path(config.MULTIHOP_DIR) / "corpus.json")
+    docs = []
+    for pdf in sorted(Path(config.DATA_DIR).glob("*.pdf")):
+        for page in load_pdf(pdf):
+            docs.append(
+                {
+                    "doc_id": f"RAG-{page['page']:03d}",  # one section per page
+                    "text": page["text"],
+                    "metadata": {"source": pdf.name, "page": page["page"]},
+                }
+            )
+    return docs
+
+
+def chunk_documents(docs: list[dict]) -> list[dict]:
+    """Chunk each document, keeping its metadata, doc_id and a stable chunk id."""
     chunks = []
-    for page in pages:
-        for j, text in enumerate(chunk_text(page["text"])):
+    for doc in docs:
+        for j, text in enumerate(chunk_text(doc["text"])):
+            header = doc.get("header")
             chunks.append(
                 {
-                    "id": f"{source}:p{page['page']}:c{j}",
-                    "text": text,
-                    "metadata": {
-                        "source": source,
-                        "page": page["page"],
-                        "section_id": f"RAG-{page['page']:03d}",
-                        "chunk": j,
-                    },
+                    "id": f"{doc['doc_id']}:c{j}",
+                    "text": f"{header}\n{text}" if header else text,
+                    "metadata": {**doc["metadata"], "doc_id": doc["doc_id"], "chunk": j},
                 }
             )
     return chunks
@@ -101,12 +131,10 @@ def store_chunks(chunks: list[dict], embeddings: list[list[float]], collection) 
     )
 
 
-def ingest(data_dir: str = config.DATA_DIR, reset: bool = True) -> int:
-    """Load every PDF in data_dir, chunk, embed and store. Returns chunk count."""
+def ingest(reset: bool = True) -> int:
+    """Load, chunk, embed and store the configured DATASET. Returns chunk count."""
     collection = get_collection(reset=reset)
-    chunks = []
-    for pdf in sorted(Path(data_dir).glob("*.pdf")):
-        chunks.extend(chunk_pages(load_pdf(pdf), source=pdf.name))
+    chunks = chunk_documents(load_documents())
     embeddings = embed_texts([c["text"] for c in chunks])
     store_chunks(chunks, embeddings, collection)
     return len(chunks)

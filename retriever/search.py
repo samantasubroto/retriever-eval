@@ -45,13 +45,13 @@ def select_mmr(candidates: list[dict], k: int, lambda_mult: float) -> list[dict]
     return [candidates[i] for i in selected]
 
 
-def select_section_cap(candidates: list[dict], k: int, max_per_section: int) -> list[dict]:
-    """Take chunks in similarity order, allowing at most max_per_section per section."""
+def select_doc_cap(candidates: list[dict], k: int, max_per_doc: int) -> list[dict]:
+    """Take chunks in similarity order, allowing at most max_per_doc per document."""
     counts: dict[str, int] = {}
     picked = []
     for c in candidates:
-        sid = c["metadata"]["section_id"]
-        if counts.get(sid, 0) < max_per_section:
+        sid = c["metadata"]["doc_id"]
+        if counts.get(sid, 0) < max_per_doc:
             counts[sid] = counts.get(sid, 0) + 1
             picked.append(c)
         if len(picked) == k:
@@ -69,8 +69,8 @@ def search(query: str, k: int = 5, collection=None, strategy: str | None = None)
         candidates = fetch_candidates(query, max(config.FETCH_K, k), collection)
         if strategy == "mmr":
             results = select_mmr(candidates, k, config.MMR_LAMBDA)
-        elif strategy == "section_cap":
-            results = select_section_cap(candidates, k, config.MAX_PER_SECTION)
+        elif strategy in ("doc_cap", "section_cap"):  # section_cap: old name
+            results = select_doc_cap(candidates, k, config.MAX_PER_DOC)
         else:
             raise ValueError(f"Unknown search strategy: {strategy}")
     for r in results:
@@ -83,4 +83,4 @@ if __name__ == "__main__":
 
     q = " ".join(sys.argv[1:]) or "What is the difference between embeddings and a retriever?"
     for r in search(q):
-        print(f"{r['score']:.3f}  {r['metadata']['section_id']}  {r['text'][:80]!r}")
+        print(f"{r['score']:.3f}  {r['metadata']['doc_id'][-40:]}  {r['text'][:80]!r}")
