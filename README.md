@@ -8,7 +8,7 @@ Retrieval is the part of a RAG (retrieval-augmented generation) system that most
 
 This project aims to replace that with a repeatable evaluation:
 
-1. Build a deliberately simple retriever over a PDF corpus.
+1. Build a deliberately simple retriever over a document corpus (first a PDF, then a news-article multi-hop dataset).
 2. Define a **golden dataset** of questions with trusted expected answers and the corpus sections that support them.
 3. Score the retriever against that dataset with objective metrics.
 4. Use the scores to compare design choices, changing one thing at a time, instead of guessing.
@@ -38,7 +38,9 @@ Each step is a separate function, so any one of them (chunking strategy, embeddi
 
 Many questions need information combined from several sections, so the evaluation measures how much of the required evidence is retrieved, not only whether one relevant chunk appears.
 
-Ground truth is labelled by **section ID**, not chunk ID, so the labels stay valid when the chunking strategy changes. In the corpus, `section_id` is `RAG-{page:03d}`.
+A second dataset, a 20-question sample of [MultiHop-RAG](https://github.com/yixuantt/MultiHop-RAG) (news articles, each question needs evidence from 2 to 4 articles), is selected with `DATASET=multihop`. Its labels are document-level (`relevant_docs`, the article URLs) plus the exact evidence sentences (`facts`), which allows an exact, free check of whether retrieved chunks contain the evidence. See Step 4 below.
+
+In the first dataset, ground truth is labelled by **section ID**, not chunk ID, so the labels stay valid when the chunking strategy changes. In the corpus, `section_id` is `RAG-{page:03d}`.
 
 ### 3. Evaluation
 
@@ -53,6 +55,8 @@ Two complementary kinds of metric:
 | Precision@k | What fraction of retrieved chunks came from required sections? |
 | MRR | How high does the first correct chunk rank? |
 
+**Evidence-fact recall** (multihop only, deterministic): the fraction of a question's evidence sentences that appear verbatim in at least one retrieved chunk. It is stricter than document recall, because retrieving the right article is not enough if the chunk with the evidence is missed.
+
 **LLM-judged metrics** (semantic, uses API calls, slightly noisy). Section IDs are only a proxy: a chunk can come from the right section without containing the needed passage. A judge model checks the actual text:
 
 | Metric | Question it answers |
@@ -66,14 +70,15 @@ Use the section-ID metrics as a fast regression gate, and the judged metrics for
 
 Change one variable at a time and re-run the same evaluation. Why we keep going: the first baseline showed the retriever reliably finds *a* correct section (hit rate 1.00) but misses most of the *other* sections a question needs (recall well below its ceiling). Each experiment below targets that gap.
 
-Done: embedding model, recursive chunking, diversity-aware search (MMR, per-section cap), hybrid search with reranking, and an audit of the golden dataset. Planned:
+Done: embedding model, recursive chunking, diversity-aware search (MMR, per-section cap), hybrid search with reranking, an audit of the golden dataset, and a switch to the MultiHop-RAG dataset (Step 4). The multihop result below is our final one. Ideas not pursued:
 
 - multi-query / query decomposition (questions need ~6.5 sections each)
 - larger k (6 to 10), combined with the per-section cap
 - stripping the `chunk_id=...` metadata lines from the corpus text before embedding
 - reranking the dense-only pool (to separate the effect of hybrid from reranking), and reranking followed by the per-section cap
 - a different model for reranking and judging (they currently share `gpt-4o-mini`)
-- trimmed label set and hand-verified questions (see dataset caveats), possibly an external dataset
+- a trimmed label set and hand-verified questions for the first dataset (see dataset caveats)
+- on multihop: a larger sample (`prepare_multihop.py --n 60`), `ARTICLE_HEADER=0`, and chunk-size ablations (articles are long, so chunking should matter there)
 - repeated judge runs, to measure how noisy the LLM-judged scores are
 
 Out of scope for now: answer generation, and answer-level metrics such as faithfulness and correctness. The same golden dataset can be reused for these later.
@@ -134,7 +139,53 @@ Dense and BM25 keyword results (30 each) are fused with reciprocal rank fusion (
 - The reranker and the judge are the same model, so the judge gains are probably flattered.
 - Gaps of a few points are within the noise of 15 questions and a single run.
 
+### Step 4: MultiHop-RAG (final result)
+
+The first dataset could not separate the strategies well (hit rate was 1.00 for all of them, and its labels are noisy). We switched to a small sample of [MultiHop-RAG](https://github.com/yixuantt/MultiHop-RAG) ([paper](https://arxiv.org/pdf/2401.15391.pdf), licence ODC-BY, please credit the source if you reuse the data). `evals/prepare_multihop.py` builds the sample reproducibly (seed 42):
+
+- **20 questions**: 7 inference, 7 comparison, 6 temporal (null queries left out, they have no evidence). Each needs 2 to 4 articles.
+- **89 articles**: the 39 evidence articles plus 50 random distractors (about 1,270 chunks of 1000 characters).
+- **Labels are verifiable**: every evidence article is in the corpus and every evidence sentence appears verbatim in its article. Each chunk is prefixed with `title | source | date`, since the questions refer to outlets and dates.
+
+Document recall can reach 1.0 here at k=5, so scores are easier to read than before.
+
+**Run A: `text-embedding-3-large`, k=5** (pool of 20 reranked to 5 for the hybrid run):
+
+| | similarity | doc cap | hybrid RRF (before rerank) | hybrid + rerank |
+|---|---|---|---|---|
+| Recall@5 (documents) | 0.51 | **0.75** | 0.66 | 0.67 |
+| Hit rate@5 | 0.85 | 1.00 | 1.00 | 1.00 |
+| Fact recall@5 | 0.33 | 0.38 | 0.48 | **0.53** |
+| Precision@5 | 0.68 | 0.58 | 0.75 | 0.76 |
+| MRR | 0.80 | 0.85 | n/a | **0.87** |
+| Judge precision@5 | 0.55 | **0.67** | n/a | **0.67** |
+| Recall@20 | 0.80 | 0.80 | **0.88** | n/a |
+| Fact recall@20 | 0.70 | 0.38 | **0.81** | n/a |
+
+**Run B (final): `text-embedding-3-small`, k=10** (pool of 20 reranked to 10):
+
+| | similarity | doc cap | hybrid RRF (before rerank) | hybrid + rerank |
+|---|---|---|---|---|
+| Recall@10 (documents) | 0.59 | 0.73 | **0.76** | 0.74 |
+| Hit rate@10 | 0.90 | 1.00 | 1.00 | 1.00 |
+| Fact recall@10 | 0.47 | 0.35 | 0.62 | **0.65** |
+| Precision@10 | 0.62 | 0.55 | 0.67 | **0.68** |
+| MRR | 0.76 | 0.82 | n/a | **0.85** |
+| Judge precision@10 | 0.44 | **0.57** | n/a | 0.50 |
+
+Pool at k=20: recall 0.83, fact recall 0.78.
+
+**Conclusions:**
+- **Hybrid search (dense + BM25 fused with RRF) is the main win.** Fact recall rose from 0.47 to about 0.62 to 0.65, and hit rate from 0.90 to 1.00, with both embedding models. News articles are full of names and dates, so keyword matching helps here, unlike on the PDF corpus where it made the pool worse.
+- **The LLM reranker adds little.** Most of the benefit is already there before reranking, and at k=10 from a pool of 20 it changes almost nothing (recall 0.76 to 0.74, fact recall 0.62 to 0.65). It costs one extra LLM call per query, so it may not be worth it.
+- **The per-document cap looks good on document recall but is weak on evidence.** It keeps one chunk per article, which is often not the chunk that contains the evidence (fact recall 0.35 to 0.38).
+- **Embedding model:** the two runs use different k, so they are not directly comparable. We did not run large at k=10, so we cannot say how much the larger model helps here.
+
+**Caveats:** 20 questions is a small sample, so differences of a few points are noise (the hybrid vs similarity gap is large enough to be more believable). The 50 distractors are random, so this is easier than the full 609-article corpus. The reranker and the judge are the same model (`gpt-4o-mini`), so judge scores are probably flattered. The judge's contextual recall is not used for this dataset, because the short answers ("Yes", "no") contain no claims to split. Fact recall replaces it.
+
 ## Dataset caveats
+
+This section is about the first (PDF) dataset. The multihop labels are described in Step 4.
 
 The golden dataset was generated by an LLM asked to synthesise answers across several corpus sections, so its labels may be wrong. `evals/audit.py` checks this by giving a judge the full corpus and the reference answer, and asking which sections support each claim (one `gpt-4o-mini` pass, 15 questions):
 
@@ -165,6 +216,7 @@ evals/
   judge.py        LLM-judged contextual recall / precision
   run.py          evaluation runner
   audit.py        checks golden-dataset labels against the corpus
+  prepare_multihop.py   builds the small MultiHop-RAG sample (data/multihop/, not committed)
 data/
   *.pdf           corpus
   eval/           golden dataset
@@ -188,17 +240,33 @@ python check_setup.py    # should print the embedding dimensions
 
 ```bash
 python -m retriever.ingest        # chunk, embed and store the corpus (rebuilds the DB)
-python -m evals.run               # section-ID metrics
+python -m evals.run               # document-level metrics (plus evidence-fact recall on multihop)
 python -m evals.run --judge       # also run LLM-judged metrics
 
 # try another search strategy without editing code
-SEARCH_STRATEGY=section_cap python -m evals.run --judge --out evals/results_section_cap.json
+SEARCH_STRATEGY=doc_cap python -m evals.run --judge --out evals/results_doc_cap.json
 SEARCH_STRATEGY=hybrid_rerank python -m evals.run --judge
 
-python -m evals.audit             # audit the golden dataset labels
+python -m evals.audit             # audit the golden dataset labels (PDF dataset)
 ```
 
 Re-run ingestion whenever you change chunking settings, the embedding model, or the corpus. Per-question results are written to `evals/results.json`.
+
+### MultiHop-RAG sample (the final experiment)
+
+```bash
+mkdir -p /tmp/mhrag_raw && cd /tmp/mhrag_raw
+curl -sLO https://huggingface.co/datasets/yixuantt/MultiHopRAG/resolve/main/MultiHopRAG.json
+curl -sLO https://huggingface.co/datasets/yixuantt/MultiHopRAG/resolve/main/corpus.json
+cd -                              # back to the project root
+
+python evals/prepare_multihop.py --raw-dir /tmp/mhrag_raw       # writes data/multihop/ (20 questions, 89 articles)
+export DATASET=multihop EMBEDDING_MODEL=text-embedding-3-small
+python -m retriever.ingest
+SEARCH_STRATEGY=hybrid_rerank K_VALUES=10 JUDGE_K=10 FINAL_K=10 python -m evals.run --judge
+```
+
+Each dataset has its own collection in `chroma_db/`. A collection built with one embedding model cannot be queried with another (the vector sizes differ), so re-ingest after changing `EMBEDDING_MODEL`.
 
 ## Configuration
 
@@ -211,8 +279,10 @@ Set in `.env` or in `retriever/config.py`:
 | `JUDGE_MODEL` | `gpt-4o-mini` | model for LLM-judged metrics |
 | `CHUNKING` | `recursive` | `recursive` or `fixed` chunking |
 | `CHUNK_SIZE` / `CHUNK_OVERLAP` | 1000 / 200 characters | chunking (in `config.py`) |
-| `SEARCH_STRATEGY` | `similarity` | `similarity`, `mmr`, `section_cap` or `hybrid_rerank` |
-| `FETCH_K` / `MMR_LAMBDA` / `MAX_PER_SECTION` | 20 / 0.5 / 1 | candidate pool and diversity settings for `mmr` and `section_cap` |
+| `DATASET` | `pdf` | `pdf` or `multihop` |
+| `ARTICLE_HEADER` | `1` | multihop: prefix each chunk with `title \| source \| date` |
+| `SEARCH_STRATEGY` | `similarity` | `similarity`, `mmr`, `doc_cap` (alias `section_cap`) or `hybrid_rerank` |
+| `FETCH_K` / `MMR_LAMBDA` / `MAX_PER_DOC` | 20 / 0.5 / 1 | candidate pool and diversity settings for `mmr` and `doc_cap` |
 | `K_VALUES` / `JUDGE_K` | 4 / 4 | comma-separated cut-offs for scoring, e.g. `K_VALUES=5,20` |
-| `POOL_K` / `FINAL_K` | 20 / 5 | pool size after fusion, and chunks kept after reranking (`hybrid_rerank`) |
+| `POOL_K` / `FINAL_K` | 20 / 5 (`FINAL_K` can be set by environment variable) | pool size after fusion, and chunks kept after reranking (`hybrid_rerank`) |
 | `RERANK_MODEL` | same as `JUDGE_MODEL` | model used for reranking |
